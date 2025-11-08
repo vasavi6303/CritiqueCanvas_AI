@@ -37,14 +37,43 @@ const voiceoverAudioPlayer = document.getElementById('voiceover-audio-player') a
 
 // --- Application State ---
 let ai: GoogleGenAI;
+
 type SceneAsset = {
     imageUrl?: string;
     imageB64?: string;
     audioUrl?: string;
     videoUrl?: string;
-    imageStatus: 'ready' | 'generating' | 'complete' | 'failed';
+    imageStatus: 'ready' | 'generating' | 'complete' | 'failed' | 'accepted';
     voStatus: 'ready' | 'generating' | 'complete' | 'failed';
-    videoStatus: 'ready' | 'generating' | 'complete' | 'failed';
+    videoStatus: 'ready' | 'generating' | 'complete' | 'failed' | 'accepted';
+    imageIterations: number;  // Track regeneration attempts
+    videoIterations: number;  // Track regeneration attempts
+    imageHistory: Array<{url: string, critique: CritiqueResult, iteration: number}>; // History of attempts
+    videoHistory: Array<{url: string, critique: CritiqueResult, iteration: number}>; // History of attempts
+};
+
+/**
+ * Critique Result Structure
+ * Multi-dimensional scoring system for AI-generated content evaluation
+ * All scores normalized to 0-1 range (0 = poor, 1 = excellent)
+ */
+type CritiqueResult = {
+  overallScore: number;           // Weighted average of all dimensions
+  scores: {
+    brandAlignment: number;       // Consistency and professional quality
+    visualQuality: number;        // Technical quality, composition, clarity
+    messageClarity: number;       // Clear communication, CTA effectiveness
+    safetyEthics: number;         // No harmful, misleading, or prohibited content
+    platformOptimization: number; // Format suitability for target platform
+  };
+  feedback: {
+    strengths: string[];          // What works well
+    issues: string[];             // Problems or violations found
+    suggestions: string[];        // Actionable improvement recommendations
+  };
+  deploymentReady: boolean;       // Pass/fail for auto-deployment (threshold: 0.7)
+  critiquedAt: string;           // ISO timestamp
+  iteration?: number;            // Regeneration attempt number (1 = first attempt)
 };
 
 const state = {
@@ -57,6 +86,13 @@ const state = {
   elevenApiKey: null as string | null,
   storyboard: null as any | null,
   sceneAssets: [] as SceneAsset[],
+  critiques: {
+    storyboard: null as CritiqueResult | null,
+    sceneImages: [] as (CritiqueResult | null)[],
+    sceneVideos: [] as (CritiqueResult | null)[],
+    postCopy: null as CritiqueResult | null,
+    overall: null as CritiqueResult | null,
+  },
   isGenerating: false,
   aspectRatio: '9:16' as '9:16' | '1:1',
 };
@@ -142,8 +178,19 @@ async function onGeneratePlan(event: Event) {
     const plan = await generateMarketingPlan(formData);
     state.storyboard = plan.storyboard;
     state.sceneAssets = new Array(plan.storyboard.scenes.length).fill(null).map(() => ({
-      imageStatus: 'ready', voStatus: 'ready', videoStatus: 'ready'
+      imageStatus: 'ready', 
+      voStatus: 'ready', 
+      videoStatus: 'ready',
+      imageIterations: 0,
+      videoIterations: 0,
+      imageHistory: [],
+      videoHistory: []
     }));
+    
+    // Initialize critique arrays
+    state.critiques.sceneImages = new Array(plan.storyboard.scenes.length).fill(null);
+    state.critiques.sceneVideos = new Array(plan.storyboard.scenes.length).fill(null);
+    
     renderStoryboard();
     setupView.classList.add('hidden');
     storyboardView.classList.remove('hidden');
@@ -195,6 +242,7 @@ async function generateMarketingPlan(formData: FormData) {
 
 function renderStoryboard() {
   storyboardContainer.innerHTML = '';
+  
   state.storyboard.scenes.forEach((scene: any, index: number) => {
     const card = document.createElement('div');
     card.className = 'scene-card';
@@ -211,6 +259,7 @@ function renderStoryboard() {
        <div id="image-container-${index}" class="asset-container">
         <div class="asset-placeholder">Generated image will appear here.</div>
       </div>
+      <div id="image-critique-${index}" class="critique-container"></div>
       <div class="form-group">
         <label for="prompt-${index}">Visual Prompt</label>
         <textarea id="prompt-${index}" rows="3" disabled>${scene.visual_prompt}</textarea>
@@ -218,6 +267,7 @@ function renderStoryboard() {
       <div id="video-container-${index}" class="asset-container" style="display:none;">
         <div class="asset-placeholder">Generated video will appear here.</div>
       </div>
+      <div id="video-critique-${index}" class="critique-container"></div>
       <div class="form-group">
         <label for="vo-${index}">Voiceover</label>
         <input type="text" id="vo-${index}" value="${scene.voiceover}" disabled>
@@ -293,6 +343,19 @@ async function generateSingleImage(scene: any, index: number) {
             imageContainer.innerHTML = `<img src="${watermarkedUrl}" alt="Scene ${scene.id} Visual">`;
             state.sceneAssets[index].imageStatus = 'complete';
             updateCardStatus(index, 'image', 'complete');
+            
+            // Critique image immediately after generation
+            try {
+                const visualPrompt = (document.getElementById(`prompt-${index}`) as HTMLTextAreaElement).value;
+                const voiceover = (document.getElementById(`vo-${index}`) as HTMLInputElement).value;
+                const imageCritique = await critiqueImage(watermarkedUrl, visualPrompt, voiceover, index);
+                state.critiques.sceneImages[index] = imageCritique;
+                logCritique(imageCritique, `Image Scene ${index + 1}`);
+                displayImageCritique(imageCritique, index);
+            } catch (critiqueError) {
+                console.error(`Image critique failed for scene ${index + 1}:`, critiqueError);
+                // Continue even if critique fails
+            }
         } else {
             throw new Error("Model did not return an image part. The prompt may have been blocked.");
         }
@@ -380,6 +443,18 @@ async function generateSingleVideo(scene: any, index: number) {
             asset.videoStatus = 'complete';
             updateCardStatus(index, 'video', 'complete');
             videoContainer.innerHTML = `<video src="${videoUrl}" controls muted loop playsinline></video>`;
+            
+            // Critique video immediately after generation
+            try {
+                const sceneData = state.storyboard.scenes[index];
+                const videoCritique = await critiqueVideo(videoUrl, sceneData, index);
+                state.critiques.sceneVideos[index] = videoCritique;
+                logCritique(videoCritique, `Video Scene ${index + 1}`);
+                displayVideoCritique(videoCritique, index);
+            } catch (critiqueError) {
+                console.error(`Video critique failed for scene ${index + 1}:`, critiqueError);
+                // Continue even if critique fails
+            }
         } else {
             console.error("Video generation operation completed but no video URI found. Full operation object:", operation);
             throw new Error('Video generation finished but no video URI was found.');
@@ -461,6 +536,48 @@ function checkAssetGenerationStatus() {
   previewBtn.disabled = !allVideos || !allVO;
   downloadBtn.disabled = !allVideos || !allVO;
   generatePostCopyBtn.disabled = !allVideos || !allVO;
+  
+  // Update overall campaign readiness display
+  updateCampaignReadiness();
+}
+
+/**
+ * Update campaign readiness indicator based on all critiques
+ */
+function updateCampaignReadiness() {
+  const readinessContainer = document.getElementById('campaign-readiness');
+  if (!readinessContainer) return;
+  
+  // Calculate overall readiness
+  const critiques = [
+    state.critiques.storyboard,
+    ...state.critiques.sceneImages,
+    ...state.critiques.sceneVideos,
+    state.critiques.postCopy
+  ].filter(c => c !== null) as CritiqueResult[];
+  
+  if (critiques.length === 0) {
+    readinessContainer.innerHTML = '';
+    return;
+  }
+  
+  const avgScore = critiques.reduce((sum, c) => sum + c.overallScore, 0) / critiques.length;
+  const allDeploymentReady = critiques.every(c => c.deploymentReady);
+  const percentage = Math.round(avgScore * 100);
+  
+  const statusClass = avgScore >= 0.9 ? 'excellent' : avgScore >= 0.7 ? 'ready' : 'warning';
+  const statusEmoji = avgScore >= 0.9 ? '🟢' : avgScore >= 0.7 ? '🟡' : '🔴';
+  const statusText = allDeploymentReady ? 'Deploy Ready' : 'Needs Review';
+  
+  readinessContainer.innerHTML = `
+    <div class=\"campaign-readiness-badge ${statusClass}\">
+      <span class=\"readiness-icon\">${statusEmoji}</span>
+      <div class=\"readiness-content\">
+        <div class=\"readiness-title\">Campaign Quality: ${percentage}%</div>
+        <div class=\"readiness-subtitle\">${statusText} • ${critiques.length} items evaluated</div>
+      </div>
+    </div>
+  `;
 }
 
 // --- POST COPY GENERATION ---
@@ -515,6 +632,23 @@ Please format your response as a single, valid JSON object with two keys: "capti
 
         const postData = JSON.parse(response.text.trim());
         renderPostCopy(postData.caption, postData.hashtags);
+        
+        // Critique post copy immediately after generation
+        showLoader("🎯 Evaluating post copy for brand alignment...");
+        try {
+            const copyCritique = await critiqueCopy(
+                postData.caption,
+                postData.hashtags,
+                productDesc,
+                targetAudience
+            );
+            state.critiques.postCopy = copyCritique;
+            logCritique(copyCritique, 'Post Copy');
+            displayPostCopyCritique(copyCritique);
+        } catch (critiqueError) {
+            console.error('Post copy critique failed:', critiqueError);
+            // Continue even if critique fails
+        }
 
     } catch (error) {
         console.error("Failed to generate post copy:", error);
@@ -555,6 +689,889 @@ function renderPostCopy(caption: string, hashtags: string[]) {
 
 // --- Preview Player Logic ---
 let currentSceneIndex = 0;
+
+// --- AI Critique Functions ---
+
+/**
+ * ==============================================
+ * AI CRITIQUE ENGINE - DISCRIMINATOR ARCHITECTURE
+ * ==============================================
+ * 
+ * The AI acts as an autonomous discriminator, evaluating generated content
+ * WITHOUT requiring brand profile input. Critiques are triggered automatically
+ * after each asset generation to ensure quality and safety.
+ * 
+ * Integration Points:
+ * 1. After generateSingleImage() -> critiqueImage()
+ * 2. After generateSingleVideo() -> critiqueVideo()
+ * 3. After handleGeneratePostCopy() -> critiqueCopy()
+ * 
+ * All critiques are non-blocking with try-catch wrappers to prevent
+ * generation pipeline failures. Results are stored in state.critiques.
+ * 
+ * Example Integration:
+ * ```typescript
+ * // In generateSingleImage, after image generation:
+ * const critique = await critiqueImage(imageUrl, visualPrompt, voiceover, index);
+ * state.critiques.sceneImages[index] = critique;
+ * displayImageCritique(critique, index);
+ * 
+ * // In generateSingleVideo, after video generation:
+ * const critique = await critiqueVideo(videoUrl, sceneData, index);
+ * state.critiques.sceneVideos[index] = critique;
+ * displayVideoCritique(critique, index);
+ * ```
+ * 
+ * Response Format: All critique functions return CritiqueResult with:
+ * - overallScore: 0-1 (weighted average)
+ * - scores: { brandAlignment, visualQuality, messageClarity, safetyEthics, platformOptimization }
+ * - feedback: { strengths[], issues[], suggestions[] }
+ * - deploymentReady: boolean (true if score >= 0.7 and no critical issues)
+ * - critiquedAt: ISO timestamp
+ */
+
+/**
+ * Critique individual image for quality and effectiveness
+ */
+async function critiqueImage(imageUrl: string, scenePrompt: string, sceneVoiceover: string, sceneIndex: number): Promise<CritiqueResult> {
+  const prompt = `
+You are a visual content quality expert evaluating an AI-generated marketing image.
+
+**SCENE CONTEXT:**
+- Original Prompt: ${scenePrompt}
+- Voiceover: "${sceneVoiceover}"
+- Scene ${sceneIndex + 1} of ${state.storyboard.scenes.length}
+- Product: ${state.storyboard.product || 'Marketing campaign'}
+
+**EVALUATION CRITERIA:**
+
+1. **Brand Alignment (0-1)**: Logo placement appropriate? Professional and consistent visual style? Appropriate for product?
+2. **Visual Quality (0-1)**: Clear, professional, no artifacts or glitches? Good composition, lighting, and focus?
+3. **Message Clarity (0-1)**: Product clearly visible and identifiable? Visual supports the voiceover message?
+4. **Safety/Ethics (0-1)**: No inappropriate content, stereotypes, or misleading visuals? Safe for all audiences?
+5. **Platform Optimization (0-1)**: Framing suitable for ${state.aspectRatio === '9:16' ? 'vertical mobile video' : 'square social feed'}? Attention-grabbing?
+
+**OUTPUT REQUIREMENTS:**
+Return valid JSON only:
+{
+  "overallScore": 0.85,
+  "scores": {
+    "brandAlignment": 0.9,
+    "visualQuality": 0.8,
+    "messageClarity": 0.9,
+    "safetyEthics": 1.0,
+    "platformOptimization": 0.85
+  },
+  "feedback": {
+    "strengths": ["what works well"],
+    "issues": ["specific problems found, empty if none"],
+    "suggestions": ["how to improve this image"]
+  },
+  "deploymentReady": true
+}
+`;
+
+  try {
+    // Convert data URL to inline data for Gemini
+    const base64Match = imageUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (!base64Match) {
+      throw new Error('Invalid image URL format');
+    }
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: {
+        parts: [
+          { text: prompt },
+          { inlineData: { data: base64Match[2], mimeType: `image/${base64Match[1]}` } }
+        ]
+      },
+      config: { responseMimeType: 'application/json' }
+    });
+
+    const result = JSON.parse(response.text.trim());
+    return {
+      ...result,
+      critiquedAt: new Date().toISOString()
+    };
+  } catch (e) {
+    console.error(`Image critique failed for scene ${sceneIndex + 1}:`, e);
+    throw new Error(`Failed to critique image ${sceneIndex + 1}. Please try again.`);
+  }
+}
+
+/**
+ * Critique video for motion quality and engagement
+ */
+async function critiqueVideo(videoUrl: string, sceneData: any, sceneIndex: number): Promise<CritiqueResult> {
+  const prompt = `
+You are a video content quality expert evaluating an AI-generated marketing video clip.
+
+**VIDEO CONTEXT:**
+- Scene ${sceneIndex + 1} of ${state.storyboard.scenes.length}
+- Visual Concept: ${sceneData.visual_prompt}
+- Voiceover: "${sceneData.voiceover}"
+- On-Screen Text: "${sceneData.on_screen_text}"
+- Platform: ${state.aspectRatio === '9:16' ? 'TikTok/Instagram Reels/YouTube Shorts' : 'Instagram/Facebook Feed'}
+
+**EVALUATION CRITERIA:**
+
+1. **Brand Alignment (0-1)**: Professional and consistent visual style? Motion and pacing appropriate for product marketing?
+2. **Visual Quality (0-1)**: Smooth motion? No glitches or artifacts? Professional production value and transitions?
+3. **Message Clarity (0-1)**: Visual action enhances the message? Text overlay readable and timed well? Clear storytelling?
+4. **Safety/Ethics (0-1)**: No inappropriate motion, misleading sequences, or unsafe content? Suitable for all audiences?
+5. **Platform Optimization (0-1)**: Duration appropriate (3-8 seconds)? Engaging for ${state.aspectRatio === '9:16' ? 'TikTok/Reels' : 'feed scrolling'}? Strong hook in first second?
+
+**ASSESSMENT GUIDELINES:**
+- Video should be 3-8 seconds for optimal platform performance
+- Motion should be dynamic but not chaotic
+- Text overlays must be readable at mobile size
+- First 1 second must grab attention ("hook")
+
+**OUTPUT REQUIREMENTS:**
+Return valid JSON only:
+{
+  "overallScore": 0.85,
+  "scores": {
+    "brandAlignment": 0.9,
+    "visualQuality": 0.8,
+    "messageClarity": 0.9,
+    "safetyEthics": 1.0,
+    "platformOptimization": 0.85
+  },
+  "feedback": {
+    "strengths": ["effective elements"],
+    "issues": ["problems identified, empty if none"],
+    "suggestions": ["improvements for regeneration"]
+  },
+  "deploymentReady": true
+}
+`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: { responseMimeType: 'application/json' }
+    });
+
+    const result = JSON.parse(response.text.trim());
+    return {
+      ...result,
+      critiquedAt: new Date().toISOString()
+    };
+  } catch (e) {
+    console.error(`Video critique failed for scene ${sceneIndex + 1}:`, e);
+    throw new Error(`Failed to critique video ${sceneIndex + 1}. Please try again.`);
+  }
+}
+
+/**
+ * Critique social media post copy for effectiveness and engagement potential
+ */
+async function critiqueCopy(caption: string, hashtags: string[], productDesc: string, targetAudience: string): Promise<CritiqueResult> {
+  const platform = state.aspectRatio === '9:16' ? 'TikTok/Instagram Reels/YouTube Shorts' : 'Instagram/Facebook Feed';
+
+  const prompt = `
+You are a social media copywriting expert evaluating post copy for a video ad campaign.
+
+**CAMPAIGN CONTEXT:**
+- Product: ${productDesc}
+- Audience: ${targetAudience}
+- Platform: ${platform}
+
+**POST COPY TO EVALUATE:**
+Caption:
+${caption}
+
+Hashtags: ${hashtags.join(' ')}
+
+**EVALUATION CRITERIA:**
+
+1. **Brand Alignment (0-1)**: Professional tone appropriate for product/audience? Consistent messaging? Authentic and trustworthy?
+2. **Visual Quality (0-1)**: N/A for text, rate formatting, emoji usage, readability, visual appeal (0.8-1.0 range)
+3. **Message Clarity (0-1)**: Clear value proposition? Strong hook in first line? Effective CTA? Concise and compelling?
+4. **Safety/Ethics (0-1)**: No misleading claims, spam tactics, inappropriate content, or false promises?
+5. **Platform Optimization (0-1)**: Length appropriate for platform? Smart hashtag strategy (3-5 relevant tags)? Platform best practices?
+
+**PLATFORM BEST PRACTICES:**
+- ${platform} optimal caption length: 125-150 characters for hook, can be longer
+- Hashtags: 3-5 highly relevant, mix of popular and niche
+- CTA: Clear next step (click link, follow, share, comment)
+- Formatting: Line breaks for readability, emojis for engagement
+
+**OUTPUT REQUIREMENTS:**
+Return valid JSON only:
+{
+  "overallScore": 0.85,
+  "scores": {
+    "brandAlignment": 0.9,
+    "visualQuality": 0.85,
+    "messageClarity": 0.9,
+    "safetyEthics": 1.0,
+    "platformOptimization": 0.8
+  },
+  "feedback": {
+    "strengths": ["what's working well"],
+    "issues": ["problems found, empty if none"],
+    "suggestions": ["specific rewrites or improvements"]
+  },
+  "deploymentReady": true
+}
+`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: { responseMimeType: 'application/json' }
+    });
+
+    const result = JSON.parse(response.text.trim());
+    return {
+      ...result,
+      critiquedAt: new Date().toISOString()
+    };
+  } catch (e) {
+    console.error('Copy critique failed:', e);
+    throw new Error('Failed to critique post copy. Please try again.');
+  }
+}
+
+/**
+ * Calculate weighted overall score from individual dimension scores
+ * Weights prioritize brand alignment and safety as most critical
+ */
+function calculateOverallScore(scores: CritiqueResult['scores']): number {
+  const weights = {
+    brandAlignment: 0.30,      // Critical: Brand consistency is paramount
+    safetyEthics: 0.25,        // Critical: Cannot deploy unsafe content
+    messageClarity: 0.20,      // Important: Must communicate effectively
+    visualQuality: 0.15,       // Important: Professional appearance
+    platformOptimization: 0.10 // Nice-to-have: Platform-specific best practices
+  };
+
+  return (
+    scores.brandAlignment * weights.brandAlignment +
+    scores.safetyEthics * weights.safetyEthics +
+    scores.messageClarity * weights.messageClarity +
+    scores.visualQuality * weights.visualQuality +
+    scores.platformOptimization * weights.platformOptimization
+  );
+}
+
+/**
+ * Format critique result for display in UI
+ */
+/**
+ * Enhanced critique display with dimensional breakdowns, radial charts, and action buttons
+ */
+function formatCritiqueDisplayEnhanced(critique: CritiqueResult, assetType: 'image' | 'video', sceneIndex: number): string {
+  const percentage = Math.round(critique.overallScore * 100);
+  const statusClass = critique.overallScore >= 0.9 ? 'excellent' : critique.overallScore >= 0.7 ? 'good' : 'warning';
+  const statusEmoji = critique.overallScore >= 0.9 ? '🟢' : critique.overallScore >= 0.7 ? '🟡' : '🔴';
+  
+  const iteration = critique.iteration || 1;
+  const asset = state.sceneAssets[sceneIndex];
+  const iterationCount = assetType === 'image' ? asset.imageIterations : asset.videoIterations;
+  const isAccepted = assetType === 'image' ? asset.imageStatus === 'accepted' : asset.videoStatus === 'accepted';
+  const maxIterations = 3;
+  const canRegenerate = !isAccepted && iterationCount < maxIterations && !critique.deploymentReady;
+  
+  // Dimensional score cards
+  const dimensions = [
+    { name: 'Brand Alignment', score: critique.scores.brandAlignment, icon: '🎯' },
+    { name: 'Visual Quality', score: critique.scores.visualQuality, icon: '🎨' },
+    { name: 'Message Clarity', score: critique.scores.messageClarity, icon: '💬' },
+    { name: 'Safety/Ethics', score: critique.scores.safetyEthics, icon: '🛡️' },
+    { name: 'Platform Fit', score: critique.scores.platformOptimization, icon: '📱' }
+  ];
+  
+  const dimensionCards = dimensions.map(dim => {
+    const dimPercentage = Math.round(dim.score * 100);
+    const dimClass = dim.score >= 0.9 ? 'excellent' : dim.score >= 0.7 ? 'good' : 'warning';
+    return `
+      <div class="dimension-card ${dimClass}">
+        <div class="dimension-icon">${dim.icon}</div>
+        <div class="dimension-info">
+          <div class="dimension-name">${dim.name}</div>
+          <div class="dimension-score">${dimPercentage}%</div>
+        </div>
+        <div class="radial-progress" data-progress="${dimPercentage}">
+          <svg width="50" height="50" viewBox="0 0 50 50">
+            <circle cx="25" cy="25" r="20" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="4"/>
+            <circle cx="25" cy="25" r="20" fill="none" stroke="currentColor" stroke-width="4"
+                    stroke-dasharray="${dimPercentage * 1.257} 125.7" 
+                    stroke-dashoffset="0" 
+                    transform="rotate(-90 25 25)" 
+                    stroke-linecap="round"/>
+          </svg>
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  // Issue badges
+  const issueBadges = critique.feedback.issues.length > 0 ? `
+    <div class="issue-badges">
+      ${critique.feedback.issues.map(issue => `
+        <span class="issue-badge">⚠️ ${issue}</span>
+      `).join('')}
+    </div>
+  ` : '';
+  
+  // Iteration history indicator
+  const iterationBadge = iterationCount > 1 ? `
+    <span class="iteration-badge" title="Generation attempt ${iterationCount} of ${maxIterations}">
+      🔄 Attempt ${iterationCount}/${maxIterations}
+    </span>
+  ` : '';
+  
+  // Action buttons
+  const actionButtons = isAccepted ? `
+    <div class="critique-actions">
+      <button class="action-btn accepted-btn" disabled>
+        ✓ Accepted
+      </button>
+    </div>
+  ` : `
+    <div class="critique-actions">
+      <button class="action-btn accept-btn" 
+              onclick="handleAcceptAsset('${assetType}', ${sceneIndex})" 
+              ${critique.deploymentReady ? '' : 'title="Asset quality is below deployment threshold (70%)"'}>
+        ✓ Accept ${assetType === 'image' ? 'Image' : 'Video'}
+      </button>
+      ${canRegenerate ? `
+        <button class="action-btn regenerate-btn" 
+                onclick="handleRegenerateAsset('${assetType}', ${sceneIndex})">
+          🔄 Regenerate with AI Improvements
+        </button>
+      ` : ''}
+      ${!canRegenerate && !critique.deploymentReady && iterationCount >= maxIterations ? `
+        <div class="max-iterations-warning">⚠️ Max regeneration attempts reached</div>
+      ` : ''}
+    </div>
+  `;
+  
+  return `
+    <div class="critique-result-enhanced ${statusClass}">
+      <div class="critique-header-enhanced">
+        <div class="overall-score-section">
+          <div class="score-circle ${statusClass}">
+            <span class="score-emoji">${statusEmoji}</span>
+            <span class="score-value">${percentage}%</span>
+          </div>
+          <div class="score-label">
+            ${critique.deploymentReady ? '✅ Ready to Deploy' : '⚠️ Needs Improvement'}
+            ${iterationBadge}
+          </div>
+        </div>
+      </div>
+      
+      ${issueBadges}
+      
+      <div class="dimensions-grid">
+        ${dimensionCards}
+      </div>
+      
+      <div class="feedback-panels">
+        ${critique.feedback.strengths.length > 0 ? `
+          <div class="feedback-panel strengths-panel">
+            <h4>💪 Strengths</h4>
+            <ul>
+              ${critique.feedback.strengths.map(s => `<li>${s}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+        
+        ${critique.feedback.suggestions.length > 0 ? `
+          <div class="feedback-panel suggestions-panel">
+            <h4>💡 AI Improvement Suggestions</h4>
+            <ul>
+              ${critique.feedback.suggestions.map(s => `<li>${s}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+      </div>
+      
+      ${actionButtons}
+    </div>
+  `;
+}
+
+/**
+ * Original simplified critique display (kept for backwards compatibility)
+ */
+function formatCritiqueDisplay(critique: CritiqueResult): string {
+  const scoreEmoji = (score: number): string => {
+    if (score >= 0.9) return '🟢';
+    if (score >= 0.7) return '🟡';
+    return '🔴';
+  };
+
+  const percentage = (score: number) => Math.round(score * 100);
+
+  return `
+<div class="critique-result">
+  <div class="critique-header">
+    <span class="overall-score ${critique.deploymentReady ? 'ready' : 'not-ready'}">
+      ${scoreEmoji(critique.overallScore)} Overall: ${percentage(critique.overallScore)}%
+    </span>
+    <span class="deployment-status ${critique.deploymentReady ? 'ready' : 'not-ready'}">
+      ${critique.deploymentReady ? '✅ Deploy Ready' : '⚠️ Needs Review'}
+    </span>
+  </div>
+  
+  <div class="score-breakdown">
+    <div class="score-item">
+      <span class="score-label">Brand Alignment</span>
+      <span class="score-value">${scoreEmoji(critique.scores.brandAlignment)} ${percentage(critique.scores.brandAlignment)}%</span>
+    </div>
+    <div class="score-item">
+      <span class="score-label">Visual Quality</span>
+      <span class="score-value">${scoreEmoji(critique.scores.visualQuality)} ${percentage(critique.scores.visualQuality)}%</span>
+    </div>
+    <div class="score-item">
+      <span class="score-label">Message Clarity</span>
+      <span class="score-value">${scoreEmoji(critique.scores.messageClarity)} ${percentage(critique.scores.messageClarity)}%</span>
+    </div>
+    <div class="score-item">
+      <span class="score-label">Safety/Ethics</span>
+      <span class="score-value">${scoreEmoji(critique.scores.safetyEthics)} ${percentage(critique.scores.safetyEthics)}%</span>
+    </div>
+    <div class="score-item">
+      <span class="score-label">Platform Optimization</span>
+      <span class="score-value">${scoreEmoji(critique.scores.platformOptimization)} ${percentage(critique.scores.platformOptimization)}%</span>
+    </div>
+  </div>
+  
+  ${critique.feedback.strengths.length > 0 ? `
+  <div class="feedback-section strengths">
+    <h4>✨ Strengths</h4>
+    <ul>${critique.feedback.strengths.map(s => `<li>${s}</li>`).join('')}</ul>
+  </div>
+  ` : ''}
+  
+  ${critique.feedback.issues.length > 0 ? `
+  <div class="feedback-section issues">
+    <h4>⚠️ Issues Found</h4>
+    <ul>${critique.feedback.issues.map(i => `<li>${i}</li>`).join('')}</ul>
+  </div>
+  ` : ''}
+  
+  ${critique.feedback.suggestions.length > 0 ? `
+  <div class="feedback-section suggestions">
+    <h4>💡 Suggestions</h4>
+    <ul>${critique.feedback.suggestions.map(s => `<li>${s}</li>`).join('')}</ul>
+  </div>
+  ` : ''}
+</div>
+`;
+}
+
+/**
+ * Log critique results to console for debugging
+ */
+function logCritique(critique: CritiqueResult, label: string) {
+  console.group(`🎯 Critique: ${label}`);
+  console.log('Overall Score:', (critique.overallScore * 100).toFixed(1) + '%');
+  console.log('Deployment Ready:', critique.deploymentReady ? '✅ Yes' : '⚠️ No');
+  console.table(critique.scores);
+  if (critique.feedback.strengths.length > 0) {
+    console.log('✨ Strengths:', critique.feedback.strengths);
+  }
+  if (critique.feedback.issues.length > 0) {
+    console.warn('⚠️ Issues:', critique.feedback.issues);
+  }
+  if (critique.feedback.suggestions.length > 0) {
+    console.log('💡 Suggestions:', critique.feedback.suggestions);
+  }
+  console.log('Timestamp:', critique.critiquedAt);
+  console.groupEnd();
+}
+
+/**
+ * Display image critique with enhanced UI
+ */
+function displayImageCritique(critique: CritiqueResult, sceneIndex: number) {
+  const container = document.getElementById(`image-critique-${sceneIndex}`);
+  if (!container) return;
+  
+  container.innerHTML = formatCritiqueDisplayEnhanced(critique, 'image', sceneIndex);
+  container.style.display = 'block';
+  
+  // Update image status indicator with critique score
+  const statusEl = document.getElementById(`image-status-${sceneIndex}`);
+  if (statusEl) {
+    const percentage = Math.round(critique.overallScore * 100);
+    const emoji = critique.overallScore >= 0.9 ? '🟢' : critique.overallScore >= 0.7 ? '🟡' : '🔴';
+    const asset = state.sceneAssets[sceneIndex];
+    const statusText = asset.imageStatus === 'accepted' ? 'Accepted ✓' : `${emoji} ${percentage}%`;
+    statusEl.textContent = `Image: ${statusText}`;
+    
+    // Update status class based on score
+    statusEl.className = 'scene-status';
+    if (asset.imageStatus === 'accepted') {
+      statusEl.classList.add('status-accepted');
+    } else if (critique.overallScore >= 0.9) {
+      statusEl.classList.add('status-excellent');
+    } else if (critique.overallScore >= 0.7) {
+      statusEl.classList.add('status-complete');
+    } else {
+      statusEl.classList.add('status-warning');
+    }
+  }
+  updateCampaignReadiness();
+}
+
+/**
+ * Display video critique with enhanced UI
+ */
+function displayVideoCritique(critique: CritiqueResult, sceneIndex: number) {
+  const container = document.getElementById(`video-critique-${sceneIndex}`);
+  if (!container) return;
+  
+  container.innerHTML = formatCritiqueDisplayEnhanced(critique, 'video', sceneIndex);
+  container.style.display = 'block';
+  
+  // Update video status indicator with critique score
+  const statusEl = document.getElementById(`video-status-${sceneIndex}`);
+  if (statusEl) {
+    const percentage = Math.round(critique.overallScore * 100);
+    const emoji = critique.overallScore >= 0.9 ? '🟢' : critique.overallScore >= 0.7 ? '🟡' : '🔴';
+    const asset = state.sceneAssets[sceneIndex];
+    const statusText = asset.videoStatus === 'accepted' ? 'Accepted ✓' : `${emoji} ${percentage}%`;
+    statusEl.textContent = `Video: ${statusText}`;
+    
+    // Update status class based on score
+    statusEl.className = 'scene-status';
+    if (asset.videoStatus === 'accepted') {
+      statusEl.classList.add('status-accepted');
+    } else if (critique.overallScore >= 0.9) {
+      statusEl.classList.add('status-excellent');
+    } else if (critique.overallScore >= 0.7) {
+      statusEl.classList.add('status-complete');
+    } else {
+      statusEl.classList.add('status-warning');
+    }
+  }
+  updateCampaignReadiness();
+}
+
+/**
+ * Display post copy critique in post copy view
+ */
+function displayPostCopyCritique(critique: CritiqueResult) {
+  const postCopyContent = document.getElementById('post-copy-content');
+  if (!postCopyContent) return;
+  
+  const critiqueDiv = document.createElement('div');
+  critiqueDiv.id = 'post-copy-critique-display';
+  critiqueDiv.innerHTML = `
+    <h3 style="margin-top: 1.5rem;">🎯 Post Copy Critique</h3>
+    ${formatCritiqueDisplay(critique)}
+  `;
+  
+  // Remove old critique if exists
+  const oldCritique = document.getElementById('post-copy-critique-display');
+  if (oldCritique) oldCritique.remove();
+  
+  postCopyContent.appendChild(critiqueDiv);
+  updateCampaignReadiness();
+}
+
+// --- Auto-Improvement & Regeneration Functions ---
+
+/**
+ * Accept an asset - locks it from further regeneration
+ */
+(window as any).handleAcceptAsset = function(assetType: 'image' | 'video', sceneIndex: number) {
+  const asset = state.sceneAssets[sceneIndex];
+  
+  if (assetType === 'image') {
+    asset.imageStatus = 'accepted';
+    // Save current version to history
+    if (asset.imageUrl) {
+      const currentCritique = state.critiques.sceneImages[sceneIndex];
+      if (currentCritique) {
+        asset.imageHistory.push({
+          url: asset.imageUrl,
+          critique: currentCritique,
+          iteration: asset.imageIterations
+        });
+      }
+    }
+  } else {
+    asset.videoStatus = 'accepted';
+    // Save current version to history
+    if (asset.videoUrl) {
+      const currentCritique = state.critiques.sceneVideos[sceneIndex];
+      if (currentCritique) {
+        asset.videoHistory.push({
+          url: asset.videoUrl,
+          critique: currentCritique,
+          iteration: asset.videoIterations
+        });
+      }
+    }
+  }
+  
+  // Refresh display
+  if (assetType === 'image') {
+    const critique = state.critiques.sceneImages[sceneIndex];
+    if (critique) displayImageCritique(critique, sceneIndex);
+  } else {
+    const critique = state.critiques.sceneVideos[sceneIndex];
+    if (critique) displayVideoCritique(critique, sceneIndex);
+  }
+  
+  console.log(`✅ ${assetType} for scene ${sceneIndex + 1} accepted by user`);
+};
+
+/**
+ * Regenerate asset with AI-powered improvements based on critique feedback
+ */
+(window as any).handleRegenerateAsset = async function(assetType: 'image' | 'video', sceneIndex: number) {
+  if (assetType === 'image') {
+    await regenerateImageWithCritique(sceneIndex);
+  } else {
+    await regenerateVideoWithCritique(sceneIndex);
+  }
+};
+
+/**
+ * Regenerate image with critique-guided improvements
+ */
+async function regenerateImageWithCritique(sceneIndex: number) {
+  const asset = state.sceneAssets[sceneIndex];
+  const scene = state.storyboard.scenes[sceneIndex];
+  const critique = state.critiques.sceneImages[sceneIndex];
+  
+  if (!critique || asset.imageStatus === 'accepted') return;
+  
+  // Check max iterations
+  if (asset.imageIterations >= 3) {
+    alert('⚠️ Maximum regeneration attempts (3) reached for this image.');
+    return;
+  }
+  
+  // Save current version to history before regenerating
+  if (asset.imageUrl) {
+    asset.imageHistory.push({
+      url: asset.imageUrl,
+      critique: critique,
+      iteration: asset.imageIterations
+    });
+  }
+  
+  asset.imageIterations++;
+  console.log(`🔄 Regenerating image for scene ${sceneIndex + 1} (Attempt ${asset.imageIterations + 1})...`);
+  
+  // Build improvement-augmented prompt
+  const originalPrompt = (document.getElementById(`prompt-${sceneIndex}`) as HTMLTextAreaElement).value;
+  const improvements = critique.feedback.suggestions.join('. ');
+  const issues = critique.feedback.issues.length > 0 ? `Avoid these issues: ${critique.feedback.issues.join(', ')}.` : '';
+  
+  const augmentedPrompt = `${originalPrompt}
+
+**CRITICAL IMPROVEMENTS REQUIRED:**
+${improvements}
+
+${issues}
+
+Apply these improvements while maintaining the core concept. Focus on enhancing visual quality, composition, and brand professionalism.`;
+  
+  // Update status
+  asset.imageStatus = 'generating';
+  updateCardStatus(sceneIndex, 'image', 'generating');
+  
+  const imageContainer = document.getElementById(`image-container-${sceneIndex}`)!;
+  imageContainer.innerHTML = `<div class=\"asset-placeholder\"><div class=\"spinner\"></div><p>♻️ Regenerating with AI improvements (${asset.imageIterations}/3)...</p></div>`;
+  
+  try {
+    const fullPrompt = `Generate a photorealistic image based on this description: "${augmentedPrompt}". The second image provided is a logo. Please place this logo naturally and realistically onto the main product described in the scene.`;
+    
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image-preview',
+      contents: {
+        parts: [
+          { text: fullPrompt },
+          { inlineData: { data: state.logo.base64!, mimeType: state.logo.mimeType! } }
+        ],
+      },
+      config: { responseModalities: [Modality.IMAGE, Modality.TEXT] },
+    });
+
+    const imagePart = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
+    if (imagePart?.inlineData) {
+      const base64Data = imagePart.inlineData.data;
+      const mimeType = imagePart.inlineData.mimeType;
+      asset.imageB64 = base64Data;
+      
+      const watermarkedUrl = await applyWatermark(`data:${mimeType};base64,${base64Data}`);
+      asset.imageUrl = watermarkedUrl;
+
+      imageContainer.innerHTML = `<img src=\"${watermarkedUrl}\" alt=\"Scene ${scene.id} Visual\">`;
+      asset.imageStatus = 'complete';
+      updateCardStatus(sceneIndex, 'image', 'complete');
+      
+      // Critique regenerated image
+      try {
+        const visualPrompt = (document.getElementById(`prompt-${sceneIndex}`) as HTMLTextAreaElement).value;
+        const voiceover = (document.getElementById(`vo-${sceneIndex}`) as HTMLInputElement).value;
+        const newCritique = await critiqueImage(watermarkedUrl, visualPrompt, voiceover, sceneIndex);
+        newCritique.iteration = asset.imageIterations;
+        state.critiques.sceneImages[sceneIndex] = newCritique;
+        logCritique(newCritique, `Image Scene ${sceneIndex + 1} (Regeneration ${asset.imageIterations})`);
+        displayImageCritique(newCritique, sceneIndex);
+        
+        // Compare scores
+        const oldScore = critique.overallScore;
+        const newScore = newCritique.overallScore;
+        const improvement = ((newScore - oldScore) * 100).toFixed(1);
+        console.log(`📊 Score change: ${Math.round(oldScore * 100)}% → ${Math.round(newScore * 100)}% (${improvement > '0' ? '+' : ''}${improvement}%)`);
+        
+        // Auto-accept if deployment ready
+        if (newCritique.deploymentReady && newScore > oldScore) {
+          console.log(`✨ Image improved and deployment-ready. Auto-accepting.`);
+          (window as any).handleAcceptAsset('image', sceneIndex);
+        }
+      } catch (critiqueError) {
+        console.error(`Critique failed after regeneration:`, critiqueError);
+      }
+    } else {
+      throw new Error("Model did not return an image part.");
+    }
+  } catch (e) {
+    const errorMessage = e instanceof Error ? e.message : String(e);
+    console.error(`Error regenerating image for scene ${sceneIndex + 1}:`, e);
+    asset.imageStatus = 'failed';
+    updateCardStatus(sceneIndex, 'image', 'failed');
+    imageContainer.innerHTML = `<div class=\"asset-placeholder\"><p style=\"color:var(--error-color)\">Regeneration failed.</p><p class=\"error-details\">${errorMessage}</p></div>`;
+  }
+}
+
+/**
+ * Regenerate video with critique-guided improvements
+ */
+async function regenerateVideoWithCritique(sceneIndex: number) {
+  const asset = state.sceneAssets[sceneIndex];
+  const scene = state.storyboard.scenes[sceneIndex];
+  const critique = state.critiques.sceneVideos[sceneIndex];
+  
+  if (!critique || asset.videoStatus === 'accepted' || asset.imageStatus !== 'complete') {
+    if (asset.imageStatus !== 'complete') {
+      alert('⚠️ Image must be generated first before regenerating video.');
+    }
+    return;
+  }
+  
+  // Check max iterations
+  if (asset.videoIterations >= 3) {
+    alert('⚠️ Maximum regeneration attempts (3) reached for this video.');
+    return;
+  }
+  
+  // Save current version to history
+  if (asset.videoUrl) {
+    asset.videoHistory.push({
+      url: asset.videoUrl,
+      critique: critique,
+      iteration: asset.videoIterations
+    });
+  }
+  
+  asset.videoIterations++;
+  console.log(`🔄 Regenerating video for scene ${sceneIndex + 1} (Attempt ${asset.videoIterations + 1})...`);
+  
+  // Build improvement-augmented prompt
+  const originalPrompt = (document.getElementById(`prompt-${sceneIndex}`) as HTMLTextAreaElement).value;
+  const improvements = critique.feedback.suggestions.join('. ');
+  const issues = critique.feedback.issues.length > 0 ? `Avoid these issues: ${critique.feedback.issues.join(', ')}.` : '';
+  
+  const augmentedPrompt = `${originalPrompt}
+
+**CRITICAL IMPROVEMENTS REQUIRED:**
+${improvements}
+
+${issues}
+
+Apply these improvements focusing on smooth motion, professional transitions, and engaging visual storytelling.`;
+  
+  asset.videoStatus = 'generating';
+  updateCardStatus(sceneIndex, 'video', 'generating');
+  
+  const videoContainer = document.getElementById(`video-container-${sceneIndex}`)!;
+  videoContainer.style.display = 'block';
+  videoContainer.innerHTML = `<div class=\"asset-placeholder\"><div class=\"spinner\"></div><p id=\"progress-message-${sceneIndex}\">♻️ Regenerating video with AI improvements (${asset.videoIterations}/3)...</p></div>`;
+  
+  try {
+    let operation = await ai.models.generateVideos({
+      model: 'veo-2.0-generate-001',
+      prompt: `Animate this image according to the following description: "${augmentedPrompt}"`,
+      image: { imageBytes: asset.imageB64!, mimeType: 'image/png' },
+      config: { numberOfVideos: 1 },
+    });
+    
+    while (!operation.done) {
+      await new Promise(resolve => setTimeout(resolve, VEO_POLLING_INTERVAL));
+      operation = await ai.operations.getVideosOperation({ operation });
+    }
+    
+    if (operation.error) {
+      throw new Error(`Video generation failed: ${(operation.error as any).message || 'Unknown error'}`);
+    }
+
+    if (operation.response?.generatedVideos?.[0]?.video?.uri) {
+      const downloadLink = operation.response.generatedVideos[0].video.uri;
+      const videoResponse = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
+      if (!videoResponse.ok) {
+        throw new Error(`Failed to download video: ${videoResponse.statusText}`);
+      }
+      const videoBlob = await videoResponse.blob();
+      const videoUrl = URL.createObjectURL(videoBlob);
+      
+      asset.videoUrl = videoUrl;
+      asset.videoStatus = 'complete';
+      updateCardStatus(sceneIndex, 'video', 'complete');
+      videoContainer.innerHTML = `<video src=\"${videoUrl}\" controls muted loop playsinline></video>`;
+      
+      // Critique regenerated video
+      try {
+        const sceneData = state.storyboard.scenes[sceneIndex];
+        const newCritique = await critiqueVideo(videoUrl, sceneData, sceneIndex);
+        newCritique.iteration = asset.videoIterations;
+        state.critiques.sceneVideos[sceneIndex] = newCritique;
+        logCritique(newCritique, `Video Scene ${sceneIndex + 1} (Regeneration ${asset.videoIterations})`);
+        displayVideoCritique(newCritique, sceneIndex);
+        
+        // Compare scores
+        const oldScore = critique.overallScore;
+        const newScore = newCritique.overallScore;
+        const improvement = ((newScore - oldScore) * 100).toFixed(1);
+        console.log(`📊 Score change: ${Math.round(oldScore * 100)}% → ${Math.round(newScore * 100)}% (${improvement > '0' ? '+' : ''}${improvement}%)`);
+        
+        // Auto-accept if deployment ready
+        if (newCritique.deploymentReady && newScore > oldScore) {
+          console.log(`✨ Video improved and deployment-ready. Auto-accepting.`);
+          (window as any).handleAcceptAsset('video', sceneIndex);
+        }
+      } catch (critiqueError) {
+        console.error(`Critique failed after video regeneration:`, critiqueError);
+      }
+    } else {
+      throw new Error('Video generation finished but no video URI was found.');
+    }
+  } catch (error) {
+    console.error(`Error regenerating video for scene ${sceneIndex + 1}:`, error);
+    asset.videoStatus = 'failed';
+    updateCardStatus(sceneIndex, 'video', 'failed');
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    videoContainer.innerHTML = `<div class=\"asset-placeholder\"><p style=\"color:var(--error-color)\">Video regeneration failed.</p><p class=\"error-details\">${errorMessage}</p></div>`;
+  }
+}
+
+// --- Preview Player Logic ---
 
 function showPreview() {
   currentSceneIndex = 0;
