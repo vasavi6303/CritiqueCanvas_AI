@@ -1,0 +1,67 @@
+.vo-container {
+    margin-top: 12px;
+}
+
+.vo-preview {
+    background: var(--surface-color);
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 8px;
+}
+
+.vo-preview audio {
+    width: 100%;
+    margin-bottom: 8px;
+}
+
+.vo-verification {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.verify-btn {
+    flex: 1;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    border: none;
+    transition: all 0.2s ease;
+}
+
+.verify-btn.accept {
+    background: var(--success-color);
+    color: white;
+}
+
+.verify-btn.accept:hover {
+    background: var(--success-hover-color);
+}
+
+.verify-btn.reject {
+    background: var(--warn-color);
+    color: black;
+}
+
+.verify-btn.reject:hover {
+    background: var(--warn-hover-color);
+}
+
+/* Button sequence styling */
+.primary-btn.next-step {
+    animation: pulse 2s infinite;
+    border: 2px solid var(--primary-color);
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(106, 90, 205, 0.4);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(106, 90, 205, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(106, 90, 205, 0);
+    }
+}

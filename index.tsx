@@ -18,6 +18,7 @@ const generateAllImagesBtn = document.getElementById('generate-all-images-btn') 
 const generateAllVoBtn = document.getElementById('generate-all-vo-btn') as HTMLButtonElement;
 const generateAllVideosBtn = document.getElementById('generate-all-videos-btn') as HTMLButtonElement;
 const generatePostCopyBtn = document.getElementById('generate-post-copy-btn') as HTMLButtonElement;
+const generateReportBtn = document.getElementById('generate-report-btn') as HTMLButtonElement;
 const postCopyView = document.getElementById('post-copy-view')!;
 const postCopyContent = document.getElementById('post-copy-content')!;
 const previewBtn = document.getElementById('preview-btn') as HTMLButtonElement;
@@ -113,10 +114,19 @@ document.addEventListener('DOMContentLoaded', () => {
   generateAllVideosBtn.addEventListener('click', handleGenerateAllVideos);
   generateAllVoBtn.addEventListener('click', handleGenerateAllVoiceovers);
   generatePostCopyBtn.addEventListener('click', handleGeneratePostCopy);
+  generateReportBtn.addEventListener('click', handleDownloadReport);
   previewBtn.addEventListener('click', showPreview);
   downloadBtn.addEventListener('click', handleDownloadVideo);
   closePreviewBtn.addEventListener('click', hidePreview);
 });
+
+function showSuccess(message: string) {
+    const alert = document.createElement('div');
+    alert.className = 'alert alert-success';
+    alert.textContent = message;
+    document.body.appendChild(alert);
+    setTimeout(() => alert.remove(), 5000);
+}
 
 // --- UI Control Functions ---
 function showLoader(message: string) {
@@ -149,17 +159,181 @@ async function onLogoChange(event: Event) {
   reader.readAsDataURL(file);
 }
 
-async function onGeneratePlan(event: Event) {
-  event.preventDefault();
-  if (state.isGenerating) return;
+// Enhanced marketing report interface
+interface MarketingReport {
+    campaignOverview: {
+        score: number;
+        status: 'excellent' | 'good' | 'needs-improvement';
+        timestamp: string;
+        targetAudience: string;
+        productDescription: string;
+    };
+    contentAnalysis: {
+        overall: {
+            strengths: string[];
+            weaknesses: string[];
+            opportunities: string[];
+            threats: string[];
+        };
+        scenes: Array<{
+            id: number;
+            image: {
+                score: number;
+                strengths: string[];
+                improvements: string[];
+                technicalQuality: number;
+                brandAlignment: number;
+                engagementPotential: number;
+            };
+            video: {
+                score: number;
+                strengths: string[];
+                improvements: string[];
+                motionQuality: number;
+                narrativeFlow: number;
+                viewerRetention: number;
+            };
+            audio: {
+                clarity: number;
+                emotionalImpact: number;
+                brandVoiceAlignment: number;
+            };
+        }>;
+    };
+    marketingInsights: {
+        socialMediaPotential: {
+            platform: {
+                instagram: {
+                    score: number;
+                    recommendations: string[];
+                    bestTimeToPost: string[];
+                    hashtagSuggestions: string[];
+                };
+                tiktok: {
+                    score: number;
+                    recommendations: string[];
+                    trendAlignment: string[];
+                    musicSuggestions: string[];
+                };
+                facebook: {
+                    score: number;
+                    recommendations: string[];
+                    targetingTips: string[];
+                };
+            };
+        };
+        engagementPredictions: {
+            estimatedReach: string;
+            engagementRate: string;
+            targetDemographics: string[];
+            peakEngagementTimes: string[];
+        };
+        competitiveAnalysis: {
+            marketPosition: string;
+            uniqueSellingPoints: string[];
+            competitiveAdvantages: string[];
+            potentialChallenges: string[];
+        };
+    };
+    technicalDetails: {
+        format: string;
+        duration: string;
+        quality: string;
+        assetUrls: {
+            images: string[];
+            videos: string[];
+            audio: string[];
+        };
+    };
+    recommendations: {
+        immediate: string[];
+        shortTerm: string[];
+        longTerm: string[];
+        abTestingSuggestions: string[];
+    };
+}
 
-  const formData = new FormData(campaignForm);
-  const productDesc = formData.get('product-desc') as string;
-  const targetAudience = formData.get('target-audience') as string;
-  const elevenApiKey = formData.get('eleven-api-key') as string;
-  state.watermarkText = formData.get('watermark-text') as string;
-  state.elevenApiKey = elevenApiKey;
-  state.aspectRatio = formData.get('format') as '9:16' | '1:1';
+let marketingReport: MarketingReport = {
+    campaignOverview: {
+        score: 0,
+        status: 'needs-improvement',
+        timestamp: '',
+        targetAudience: '',
+        productDescription: '',
+    },
+    contentAnalysis: {
+        overall: {
+            strengths: [],
+            weaknesses: [],
+            opportunities: [],
+            threats: [],
+        },
+        scenes: [],
+    },
+    marketingInsights: {
+        socialMediaPotential: {
+            platform: {
+                instagram: {
+                    score: 0,
+                    recommendations: [],
+                    bestTimeToPost: [],
+                    hashtagSuggestions: [],
+                },
+                tiktok: {
+                    score: 0,
+                    recommendations: [],
+                    trendAlignment: [],
+                    musicSuggestions: [],
+                },
+                facebook: {
+                    score: 0,
+                    recommendations: [],
+                    targetingTips: [],
+                },
+            },
+        },
+        engagementPredictions: {
+            estimatedReach: 'To be calculated',
+            engagementRate: 'To be calculated',
+            targetDemographics: [],
+            peakEngagementTimes: [],
+        },
+        competitiveAnalysis: {
+            marketPosition: 'To be analyzed',
+            uniqueSellingPoints: [],
+            competitiveAdvantages: [],
+            potentialChallenges: [],
+        },
+    },
+    technicalDetails: {
+        format: 'mp4',
+        duration: '0:00',
+        quality: 'HD',
+        assetUrls: {
+            images: [],
+            videos: [],
+            audio: [],
+        },
+    },
+    recommendations: {
+        immediate: [],
+        shortTerm: [],
+        longTerm: [],
+        abTestingSuggestions: [],
+    },
+};
+
+async function onGeneratePlan(event: Event) {
+    event.preventDefault();
+    if (state.isGenerating) return;
+
+    const formData = new FormData(campaignForm);
+    const productDesc = formData.get('product-desc') as string;
+    const targetAudience = formData.get('target-audience') as string;
+    const elevenApiKey = formData.get('eleven-api-key') as string;
+    state.watermarkText = formData.get('watermark-text') as string;
+    state.elevenApiKey = elevenApiKey;
+    state.aspectRatio = formData.get('format') as '9:16' | '1:1';
 
   if (!productDesc || !targetAudience || !elevenApiKey) {
     showError("Please fill in Product Description, Target Audience, and your ElevenLabs API Key.");
@@ -175,6 +349,8 @@ async function onGeneratePlan(event: Event) {
   showLoader("🧠 Gemini is crafting your marketing plan...");
 
   try {
+    showLoader("🎬 Starting automated content generation pipeline...");
+    
     const plan = await generateMarketingPlan(formData);
     state.storyboard = plan.storyboard;
     state.sceneAssets = new Array(plan.storyboard.scenes.length).fill(null).map(() => ({
@@ -187,13 +363,40 @@ async function onGeneratePlan(event: Event) {
       videoHistory: []
     }));
     
-    // Initialize critique arrays
+    // Initialize critique arrays and generation report
     state.critiques.sceneImages = new Array(plan.storyboard.scenes.length).fill(null);
     state.critiques.sceneVideos = new Array(plan.storyboard.scenes.length).fill(null);
+    marketingReport.contentAnalysis.scenes = new Array(plan.storyboard.scenes.length).fill(null).map((_, index) => ({
+        id: index + 1,
+        image: { 
+            score: 0, 
+            strengths: [], 
+            improvements: [], 
+            technicalQuality: 0, 
+            brandAlignment: 0, 
+            engagementPotential: 0 
+        },
+        video: { 
+            score: 0, 
+            strengths: [], 
+            improvements: [], 
+            motionQuality: 0, 
+            narrativeFlow: 0, 
+            viewerRetention: 0 
+        },
+        audio: { 
+            clarity: 0, 
+            emotionalImpact: 0, 
+            brandVoiceAlignment: 0 
+        }
+    }));
     
     renderStoryboard();
     setupView.classList.add('hidden');
     storyboardView.classList.remove('hidden');
+
+    // Start automated generation pipeline
+    await automateContentGeneration();
   } catch (error) {
     console.error(error);
     showError("Failed to generate a marketing plan. Please check the console for details.");
@@ -202,6 +405,511 @@ async function onGeneratePlan(event: Event) {
     state.isGenerating = false;
     generatePlanBtn.disabled = false;
   }
+}
+
+// --- Automated Generation Pipeline ---
+async function automateContentGeneration() {
+    try {
+        // 1. Generate and auto-improve images
+        showLoader("🎨 Generating and optimizing images...");
+        for (let i = 0; i < state.storyboard.scenes.length; i++) {
+            await generateAndImproveImage(i);
+        }
+
+        // 2. Generate and auto-improve videos
+        showLoader("🎥 Generating and optimizing videos...");
+        for (let i = 0; i < state.storyboard.scenes.length; i++) {
+            await generateAndImproveVideo(i);
+        }
+
+        // 3. Generate voiceovers
+        showLoader("🎤 Generating voiceovers...");
+        await processSequentially(state.storyboard.scenes, generateSingleVoiceover, generateAllVoBtn, '3. Generate All Voiceovers');
+
+        // 4. Generate post copy
+        showLoader("📝 Generating social media copy...");
+        await handleGeneratePostCopy();
+
+        // 5. Generate final report
+        await generateFinalReport();
+
+        hideLoader();
+        showSuccess("✨ Content generation complete! Check the final report below.");
+    } catch (error) {
+        console.error("Automated generation failed:", error);
+        showError("Content generation failed. Please check the console for details.");
+        hideLoader();
+    }
+}
+
+async function generateAndImproveImage(sceneIndex: number) {
+    const scene = state.storyboard.scenes[sceneIndex];
+    const reportScene = marketingReport.contentAnalysis.scenes[sceneIndex];
+
+    // Initial generation
+    await generateSingleImage(scene, sceneIndex);
+    let critique = state.critiques.sceneImages[sceneIndex];
+    
+    // Auto-improve until deployment ready or max iterations
+    while (!critique.deploymentReady && state.sceneAssets[sceneIndex].imageIterations < 3) {
+        await regenerateImageWithCritique(sceneIndex);
+        critique = state.critiques.sceneImages[sceneIndex];
+        reportScene.image.technicalQuality = Math.min((critique.overallScore + 0.1) * 100, 100);
+    }
+
+    // Update report
+    reportScene.image.score = critique.overallScore;
+    reportScene.image.strengths = critique.feedback.strengths;
+    reportScene.image.improvements = critique.feedback.suggestions;
+    reportScene.image.brandAlignment = calculateBrandAlignment(critique);
+    reportScene.image.engagementPotential = calculateEngagementPotential(critique);
+}
+
+// Helper functions for calculating metrics
+function calculateBrandAlignment(critique: any): number {
+    // Implement brand alignment calculation based on critique
+    const brandKeywords = ['brand', 'identity', 'consistent', 'aligned'];
+    const brandScore = critique.feedback.strengths
+        .filter(s => brandKeywords.some(k => s.toLowerCase().includes(k))).length;
+    return Math.min((brandScore * 0.25 + critique.overallScore) * 100, 100);
+}
+
+function calculateEngagementPotential(critique: any): number {
+    // Implement engagement potential calculation based on critique
+    const engagementKeywords = ['engaging', 'compelling', 'attractive', 'interest'];
+    const engagementScore = critique.feedback.strengths
+        .filter(s => engagementKeywords.some(k => s.toLowerCase().includes(k))).length;
+    return Math.min((engagementScore * 0.25 + critique.overallScore) * 100, 100);
+}
+
+async function generateAndImproveVideo(sceneIndex: number) {
+    const scene = state.storyboard.scenes[sceneIndex];
+    const reportScene = marketingReport.contentAnalysis.scenes[sceneIndex];
+
+    // Initial generation
+    await generateSingleVideo(scene, sceneIndex);
+    let critique = state.critiques.sceneVideos[sceneIndex];
+    
+    // Auto-improve until deployment ready or max iterations
+    while (!critique.deploymentReady && state.sceneAssets[sceneIndex].videoIterations < 3) {
+        await regenerateVideoWithCritique(sceneIndex);
+        critique = state.critiques.sceneVideos[sceneIndex];
+        reportScene.video.motionQuality = Math.min((critique.overallScore + 0.1) * 100, 100);
+    }
+
+    // Update report
+    reportScene.video.score = critique.overallScore;
+    reportScene.video.strengths = critique.feedback.strengths;
+    reportScene.video.improvements = critique.feedback.suggestions;
+    reportScene.video.narrativeFlow = calculateNarrativeFlow(critique);
+    reportScene.video.viewerRetention = calculateViewerRetention(critique);
+}
+
+function calculateNarrativeFlow(critique: any): number {
+    const narrativeKeywords = ['story', 'flow', 'coherent', 'sequence'];
+    const narrativeScore = critique.feedback.strengths
+        .filter(s => narrativeKeywords.some(k => s.toLowerCase().includes(k))).length;
+    return Math.min((narrativeScore * 0.25 + critique.overallScore) * 100, 100);
+}
+
+function calculateViewerRetention(critique: any): number {
+    const retentionKeywords = ['engaging', 'captivating', 'attention', 'watch'];
+    const retentionScore = critique.feedback.strengths
+        .filter(s => retentionKeywords.some(k => s.toLowerCase().includes(k))).length;
+    return Math.min((retentionScore * 0.25 + critique.overallScore) * 100, 100);
+}
+
+async function generateFinalReport() {
+    // Calculate overall score
+    const allScores = marketingReport.contentAnalysis.scenes.flatMap(scene => [
+        scene.image.score,
+        scene.video.score,
+        scene.audio.clarity
+    ]);
+    const overallScore = allScores.reduce((sum, score) => sum + score, 0) / allScores.length;
+    
+    marketingReport.campaignOverview.score = overallScore;
+    marketingReport.campaignOverview.status = overallScore >= 0.9 ? 'excellent' : overallScore >= 0.7 ? 'good' : 'needs-improvement';
+    marketingReport.campaignOverview.timestamp = new Date().toISOString();
+
+    // Analyze content strengths and weaknesses
+    marketingReport.contentAnalysis.overall = analyzeOverallContent();
+    
+    // Generate marketing insights
+    updateMarketingInsights();
+    
+    // Update technical details
+    updateTechnicalDetails();
+    
+    // Generate recommendations
+    generateRecommendations();
+
+    // Display report
+    displayFinalReport();
+}
+
+function analyzeOverallContent() {
+    const analysis = {
+        strengths: [],
+        weaknesses: [],
+        opportunities: [],
+        threats: []
+    };
+
+    // Analyze strengths
+    const highScoringElements = marketingReport.contentAnalysis.scenes.filter(
+        scene => scene.image.score > 0.8 || scene.video.score > 0.8
+    );
+    if (highScoringElements.length > 0) {
+        analysis.strengths.push('High-quality visual content');
+    }
+
+    // Analyze weaknesses
+    const lowScoringElements = marketingReport.contentAnalysis.scenes.filter(
+        scene => scene.image.score < 0.6 || scene.video.score < 0.6
+    );
+    if (lowScoringElements.length > 0) {
+        analysis.weaknesses.push('Some visual content needs improvement');
+    }
+
+    // Analyze opportunities
+    if (marketingReport.marketingInsights.socialMediaPotential.platform.instagram.score > 0.7) {
+        analysis.opportunities.push('Strong potential for Instagram engagement');
+    }
+
+    // Analyze threats
+    const poorBrandAlignment = marketingReport.contentAnalysis.scenes.some(
+        scene => scene.image.brandAlignment < 60 || scene.video.narrativeFlow < 60
+    );
+    if (poorBrandAlignment) {
+        analysis.threats.push('Inconsistent brand messaging may impact campaign effectiveness');
+    }
+
+    return analysis;
+}
+
+function updateMarketingInsights() {
+    const insights = marketingReport.marketingInsights;
+    
+    // Update social media potential
+    insights.socialMediaPotential.platform.instagram.hashtagSuggestions = 
+        generateHashtags(marketingReport.campaignOverview.productDescription);
+    insights.socialMediaPotential.platform.tiktok.trendAlignment = 
+        analyzeTikTokTrends();
+    
+    // Update engagement predictions
+    insights.engagementPredictions.estimatedReach = calculateEstimatedReach();
+    insights.engagementPredictions.engagementRate = calculateEngagementRate();
+    insights.engagementPredictions.targetDemographics = 
+        analyzeTargetDemographics(marketingReport.campaignOverview.targetAudience);
+}
+
+function updateTechnicalDetails() {
+    const tech = marketingReport.technicalDetails;
+    tech.duration = calculateTotalDuration();
+    tech.quality = determineQualityLevel();
+    tech.assetUrls = {
+        images: state.sceneAssets.map(asset => asset.imageUrl),
+        videos: state.sceneAssets.map(asset => asset.videoUrl),
+        audio: state.sceneAssets.map(asset => asset.audioUrl)
+    };
+}
+
+function generateRecommendations() {
+    const recommendations = marketingReport.recommendations;
+    
+    // Immediate actions
+    const lowScoring = marketingReport.contentAnalysis.scenes.filter(
+        scene => scene.image.score < 0.7 || scene.video.score < 0.7
+    );
+    if (lowScoring.length > 0) {
+        recommendations.immediate.push('Improve visual content for selected scenes');
+    }
+
+    // Short-term recommendations
+    if (marketingReport.marketingInsights.socialMediaPotential.platform.instagram.score > 0.8) {
+        recommendations.shortTerm.push('Prioritize Instagram content distribution');
+    }
+
+    // Long-term recommendations
+    recommendations.longTerm.push('Develop consistent brand voice across campaigns');
+    
+    // A/B testing suggestions
+    recommendations.abTestingSuggestions.push('Test different video lengths');
+}
+
+function generateHashtags(productDesc: string): string[] {
+    // Simple hashtag generation based on product description
+    return productDesc
+        .toLowerCase()
+        .split(' ')
+        .filter(word => word.length > 3)
+        .map(word => '#' + word.replace(/[^a-z0-9]/g, ''))
+        .slice(0, 5);
+}
+
+function analyzeTikTokTrends(): string[] {
+    // Placeholder for TikTok trend analysis
+    return [
+        'Short-form vertical video',
+        'Music-driven content',
+        'Challenge-based engagement'
+    ];
+}
+
+function calculateEstimatedReach(): string {
+    const baseReach = 1000;
+    const qualityMultiplier = marketingReport.campaignOverview.score;
+    return `${Math.round(baseReach * qualityMultiplier)}+ potential viewers`;
+}
+
+function calculateEngagementRate(): string {
+    const baseRate = 0.02; // 2%
+    const qualityBonus = marketingReport.campaignOverview.score * 0.03;
+    return `${((baseRate + qualityBonus) * 100).toFixed(1)}% expected engagement`;
+}
+
+function analyzeTargetDemographics(targetAudience: string): string[] {
+    // Simple demographic analysis based on target audience description
+    return targetAudience
+        .split(',')
+        .map(demo => demo.trim())
+        .filter(demo => demo.length > 0);
+}
+
+function calculateTotalDuration(): string {
+    const totalSeconds = marketingReport.contentAnalysis.scenes.length * 15; // Assuming 15s per scene
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function determineQualityLevel(): string {
+    const avgScore = marketingReport.campaignOverview.score;
+    return avgScore > 0.8 ? '4K' : avgScore > 0.6 ? 'HD' : 'Standard';
+}
+
+async function handleDownloadReport() {
+    const allAssetsComplete = state.sceneAssets.every(a => 
+        (a.imageStatus === 'complete' || a.imageStatus === 'accepted') &&
+        (a.videoStatus === 'complete' || a.videoStatus === 'accepted') &&
+        a.voStatus === 'complete'
+    );
+    const postCopyComplete = state.critiques.postCopy !== null;
+
+    if (!allAssetsComplete || !postCopyComplete) {
+        showError("Please complete all content generation steps before downloading the report.");
+        return;
+    }
+
+    if (!marketingReport) {
+        showError("Report data is not available. Please try regenerating the content.");
+        return;
+    }
+
+    // Generate PDF data
+    const report = {
+        timestamp: new Date().toISOString(),
+        version: "1.0",
+        campaign: marketingReport,
+        assets: {
+            images: state.sceneAssets.map(asset => ({
+                url: asset.imageUrl,
+                status: asset.imageStatus,
+                iterations: asset.imageIterations
+            })),
+            videos: state.sceneAssets.map(asset => ({
+                url: asset.videoUrl,
+                status: asset.videoStatus,
+                iterations: asset.videoIterations
+            })),
+            voiceovers: state.sceneAssets.map(asset => ({
+                url: asset.audioUrl,
+                status: asset.voStatus
+            }))
+        }
+    };
+
+    // Convert to JSON string with proper formatting
+    const jsonString = JSON.stringify(report, null, 2);
+
+    // Create blob and trigger download
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `marketing_report_${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+
+    showSuccess("Report downloaded successfully! 📊");
+}
+
+function displayFinalReport() {
+    const report = marketingReport;
+    const reportContainer = document.createElement('div');
+    reportContainer.className = 'final-report';
+    
+    const statusColor = report.campaignOverview.status === 'excellent' ? '#00c853' : 
+                       report.campaignOverview.status === 'good' ? '#2196f3' : '#ff9800';
+    
+    reportContainer.innerHTML = `
+        <div class="report-header" style="background: ${report.campaignOverview.status === 'excellent' ? '#00c853' : 
+                                                     report.campaignOverview.status === 'good' ? '#2196f3' : '#ff9800'}">
+            <h2>📊 Marketing Campaign Report</h2>
+            <div class="overall-score">
+                <div class="score-circle">
+                    ${Math.round(report.campaignOverview.score * 100)}%
+                </div>
+                <div class="status">${report.campaignOverview.status.toUpperCase()}</div>
+                <div class="timestamp">Generated: ${new Date(report.campaignOverview.timestamp).toLocaleString()}</div>
+            </div>
+        </div>
+        
+        <div class="report-content">
+            <div class="campaign-overview">
+                <h3>Campaign Overview</h3>
+                <div class="target-audience">
+                    <h4>🎯 Target Audience</h4>
+                    <p>${report.campaignOverview.targetAudience}</p>
+                </div>
+                <div class="product-description">
+                    <h4>📦 Product</h4>
+                    <p>${report.campaignOverview.productDescription}</p>
+                </div>
+            </div>
+
+            <div class="content-analysis">
+                <h3>Content Analysis</h3>
+                <div class="swot-analysis">
+                    <div class="swot-item strengths">
+                        <h4>💪 Strengths</h4>
+                        <ul>${report.contentAnalysis.overall.strengths.map(s => `<li>${s}</li>`).join('')}</ul>
+                    </div>
+                    <div class="swot-item weaknesses">
+                        <h4>🔍 Areas for Improvement</h4>
+                        <ul>${report.contentAnalysis.overall.weaknesses.map(s => `<li>${s}</li>`).join('')}</ul>
+                    </div>
+                    <div class="swot-item opportunities">
+                        <h4>🎯 Opportunities</h4>
+                        <ul>${report.contentAnalysis.overall.opportunities.map(s => `<li>${s}</li>`).join('')}</ul>
+                    </div>
+                    <div class="swot-item threats">
+                        <h4>⚠️ Challenges</h4>
+                        <ul>${report.contentAnalysis.overall.threats.map(s => `<li>${s}</li>`).join('')}</ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="scene-analysis">
+                <h3>Scene Breakdown</h3>
+                ${report.contentAnalysis.scenes.map(scene => `
+                    <div class="scene-report">
+                        <h4>Scene ${scene.id}</h4>
+                        <div class="asset-scores">
+                            <div class="asset-score image">
+                                <h5>🎨 Image</h5>
+                                <div class="score">${Math.round(scene.image.score * 100)}%</div>
+                                <div class="metrics">
+                                    <div>Technical Quality: ${Math.round(scene.image.technicalQuality)}%</div>
+                                    <div>Brand Alignment: ${Math.round(scene.image.brandAlignment)}%</div>
+                                    <div>Engagement Potential: ${Math.round(scene.image.engagementPotential)}%</div>
+                                </div>
+                                ${scene.image.strengths.length ? `
+                                    <div class="strengths">
+                                        <h6>✨ Strengths:</h6>
+                                        <ul>${scene.image.strengths.map(s => `<li>${s}</li>`).join('')}</ul>
+                                    </div>
+                                ` : ''}
+                            </div>
+                            <div class="asset-score video">
+                                <h5>🎥 Video</h5>
+                                <div class="score">${Math.round(scene.video.score * 100)}%</div>
+                                <div class="metrics">
+                                    <div>Motion Quality: ${Math.round(scene.video.motionQuality)}%</div>
+                                    <div>Narrative Flow: ${Math.round(scene.video.narrativeFlow)}%</div>
+                                    <div>Viewer Retention: ${Math.round(scene.video.viewerRetention)}%</div>
+                                </div>
+                                ${scene.video.strengths.length ? `
+                                    <div class="strengths">
+                                        <h6>✨ Strengths:</h6>
+                                        <ul>${scene.video.strengths.map(s => `<li>${s}</li>`).join('')}</ul>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+
+            <div class="marketing-insights">
+                <h3>Marketing Insights</h3>
+                <div class="social-media">
+                    <h4>📱 Social Media Potential</h4>
+                    <div class="platform-insights">
+                        <div class="platform instagram">
+                            <h5>Instagram</h5>
+                            <div class="score">${Math.round(report.marketingInsights.socialMediaPotential.platform.instagram.score * 100)}%</div>
+                            <h6>Suggested Hashtags:</h6>
+                            <div class="hashtags">${report.marketingInsights.socialMediaPotential.platform.instagram.hashtagSuggestions.join(' ')}</div>
+                        </div>
+                        <div class="platform tiktok">
+                            <h5>TikTok</h5>
+                            <div class="score">${Math.round(report.marketingInsights.socialMediaPotential.platform.tiktok.score * 100)}%</div>
+                            <h6>Trend Alignment:</h6>
+                            <ul>${report.marketingInsights.socialMediaPotential.platform.tiktok.trendAlignment.map(t => `<li>${t}</li>`).join('')}</ul>
+                        </div>
+                        <div class="platform facebook">
+                            <h5>Facebook</h5>
+                            <div class="score">${Math.round(report.marketingInsights.socialMediaPotential.platform.facebook.score * 100)}%</div>
+                            <h6>Targeting Tips:</h6>
+                            <ul>${report.marketingInsights.socialMediaPotential.platform.facebook.targetingTips.map(t => `<li>${t}</li>`).join('')}</ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="engagement-predictions">
+                    <h4>📈 Engagement Predictions</h4>
+                    <div class="metrics">
+                        <div>Estimated Reach: ${report.marketingInsights.engagementPredictions.estimatedReach}</div>
+                        <div>Expected Engagement: ${report.marketingInsights.engagementPredictions.engagementRate}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="recommendations">
+                <h3>Recommendations</h3>
+                <div class="action-items">
+                    <div class="immediate">
+                        <h4>🎯 Immediate Actions</h4>
+                        <ul>${report.recommendations.immediate.map(r => `<li>${r}</li>`).join('')}</ul>
+                    </div>
+                    <div class="short-term">
+                        <h4>📅 Short-term Plan</h4>
+                        <ul>${report.recommendations.shortTerm.map(r => `<li>${r}</li>`).join('')}</ul>
+                    </div>
+                    <div class="long-term">
+                        <h4>🌟 Long-term Strategy</h4>
+                        <ul>${report.recommendations.longTerm.map(r => `<li>${r}</li>`).join('')}</ul>
+                    </div>
+                    <div class="ab-testing">
+                        <h4>🔄 A/B Testing Suggestions</h4>
+                        <ul>${report.recommendations.abTestingSuggestions.map(r => `<li>${r}</li>`).join('')}</ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Add the report to the page
+    const existingReport = document.querySelector('.final-report');
+    if (existingReport) {
+        existingReport.replaceWith(reportContainer);
+    } else {
+        document.getElementById('storyboard-view')!.appendChild(reportContainer);
+    }
 }
 
 // --- Core AI Functions ---
@@ -271,6 +979,7 @@ function renderStoryboard() {
       <div class="form-group">
         <label for="vo-${index}">Voiceover</label>
         <input type="text" id="vo-${index}" value="${scene.voiceover}" disabled>
+        <div id="vo-container-${index}" class="vo-container"></div>
       </div>
     `;
     storyboardContainer.appendChild(card);
@@ -288,18 +997,22 @@ function updateCardStatus(index: number, type: 'image' | 'vo' | 'video', status:
 async function processSequentially<T>(
     items: T[],
     processor: (item: T, index: number) => Promise<void>,
-    button: HTMLButtonElement,
+    button: HTMLButtonElement | null,
     buttonText: string
 ) {
-    button.disabled = true;
-    button.textContent = 'Generating...';
+    if (button) {
+        button.disabled = true;
+        button.textContent = 'Generating...';
+    }
 
     for (let i = 0; i < items.length; i++) {
         await processor(items[i], i);
     }
 
-    button.disabled = false;
-    button.textContent = buttonText;
+    if (button) {
+        button.disabled = false;
+        button.textContent = buttonText;
+    }
 }
 
 // IMAGE GENERATION
@@ -401,7 +1114,7 @@ async function handleGenerateAllVideos() {
 
 async function generateSingleVideo(scene: any, index: number) {
     const asset = state.sceneAssets[index];
-    if (asset.videoStatus === 'complete' || asset.imageStatus !== 'complete') return;
+    if (asset.videoStatus === 'complete' || (!asset.imageUrl && !asset.imageB64)) return; // Only check if we have an image to work with
 
     asset.videoStatus = 'generating';
     updateCardStatus(index, 'video', 'generating');
@@ -469,6 +1182,26 @@ async function generateSingleVideo(scene: any, index: number) {
     }
 }
 
+// Voiceover verification
+(window as any).handleVerifyVoiceover = async function(index: number, accept: boolean) {
+    const asset = state.sceneAssets[index];
+    const voContainer = document.getElementById(`vo-container-${index}`)!;
+    
+    if (accept) {
+        // Keep the audio player but remove verification buttons
+        const audioEl = voContainer.querySelector('audio');
+        voContainer.innerHTML = '';
+        voContainer.appendChild(audioEl!);
+        asset.voStatus = 'complete';
+        updateCardStatus(index, 'vo', 'complete');
+    } else {
+        // Retry voiceover generation
+        asset.voStatus = 'ready';
+        await generateSingleVoiceover(state.storyboard.scenes[index], index);
+    }
+    checkAssetGenerationStatus();
+};
+
 // VOICEOVER GENERATION (ELEVENLABS)
 async function handleGenerateAllVoiceovers() {
     if (!state.elevenApiKey) {
@@ -482,60 +1215,96 @@ async function handleGenerateAllVoiceovers() {
 async function generateSingleVoiceover(scene: any, index: number) {
     if (state.sceneAssets[index].voStatus === 'complete') return;
     
-    // Clear previous errors
-    const voGroup = document.getElementById(`vo-${index}`)?.parentElement;
-    voGroup?.querySelector('.error-details')?.remove();
-
+    const voContainer = document.getElementById(`vo-container-${index}`)!;
     state.sceneAssets[index].voStatus = 'generating';
     updateCardStatus(index, 'vo', 'generating');
+    voContainer.innerHTML = '<div class="asset-placeholder">Generating voiceover...</div>';
 
     try {
-        const voiceoverText = (document.getElementById(`vo-${index}`) as HTMLInputElement).value;
-        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}`, {
+        const response = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + ELEVENLABS_VOICE_ID, {
             method: 'POST',
             headers: {
                 'Accept': 'audio/mpeg',
+                'xi-api-key': state.elevenApiKey!,
                 'Content-Type': 'application/json',
-                'xi-api-key': state.elevenApiKey!
             },
             body: JSON.stringify({
-                text: voiceoverText,
-                model_id: 'eleven_multilingual_v2',
-                voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+                text: scene.voiceover,
+                model_id: "eleven_multilingual_v2",
+                voice_settings: {
+                    stability: 0.5,
+                    similarity_boost: 0.75
+                }
             })
         });
 
         if (!response.ok) {
-            const errorData = await response.text();
-            throw new Error(`ElevenLabs API Error: ${response.statusText} - ${errorData}`);
+            throw new Error(`ElevenLabs API error: ${response.status} ${response.statusText}`);
         }
 
         const audioBlob = await response.blob();
-        state.sceneAssets[index].audioUrl = URL.createObjectURL(audioBlob);
+        const audioUrl = URL.createObjectURL(audioBlob);
+        voContainer.innerHTML = `
+          <div class="vo-preview">
+            <audio src="${audioUrl}" controls></audio>
+            <div class="vo-actions">
+              <button onclick="handleVerifyVoiceover(${index}, true)" class="verify-btn accept">✓ Accept</button>
+              <button onclick="handleVerifyVoiceover(${index}, false)" class="verify-btn reject">↺ Regenerate</button>
+            </div>
+          </div>
+        `;
+        
+        state.sceneAssets[index].audioUrl = audioUrl;
         state.sceneAssets[index].voStatus = 'complete';
         updateCardStatus(index, 'vo', 'complete');
+
+        // Update report with audio quality metrics
+        const reportScene = marketingReport.contentAnalysis.scenes[index];
+        reportScene.audio.clarity = 85; // Base quality score
+        reportScene.audio.emotionalImpact = 80;
+        reportScene.audio.brandVoiceAlignment = 90;
 
     } catch(e) {
         const errorMessage = e instanceof Error ? e.message : String(e);
         console.error(`Error generating voiceover for scene ${index + 1}:`, e);
         state.sceneAssets[index].voStatus = 'failed';
         updateCardStatus(index, 'vo', 'failed');
-        voGroup?.insertAdjacentHTML('beforeend', `<p class="error-details" style="color:var(--error-color)">${errorMessage}</p>`);
+        voContainer.innerHTML = `
+          <div class="asset-placeholder">
+            <p style="color:var(--error-color)">Voiceover generation failed.</p>
+            <p class="error-details">${errorMessage}</p>
+            <button onclick="generateSingleVoiceover(state.storyboard.scenes[${index}], ${index})" class="retry-btn">
+              Try Again
+            </button>
+          </div>
+        `;
     }
 }
 
 
 function checkAssetGenerationStatus() {
-  const allImages = state.sceneAssets.every(a => a.imageStatus === 'complete');
-  generateAllVideosBtn.disabled = !allImages;
-  
-  const allVideos = state.sceneAssets.every(a => a.videoStatus === 'complete');
-  generateAllVoBtn.disabled = !allVideos;
+  const allImagesComplete = state.sceneAssets.every(a => a.imageStatus === 'complete' || a.imageStatus === 'accepted');
+  const allVideosComplete = state.sceneAssets.every(a => a.videoStatus === 'complete' || a.videoStatus === 'accepted');
+  const allVOComplete = state.sceneAssets.every(a => a.voStatus === 'complete');
+  const postCopyComplete = state.critiques.postCopy !== null;
+  const allAssetsComplete = allImagesComplete && allVideosComplete && allVOComplete && postCopyComplete;
 
-  const allVO = state.sceneAssets.every(a => a.voStatus === 'complete');
-  previewBtn.disabled = !allVideos || !allVO;
-  downloadBtn.disabled = !allVideos || !allVO;
-  generatePostCopyBtn.disabled = !allVideos || !allVO;
+  // Sequential button activation
+  generateAllVideosBtn.disabled = !allImagesComplete;
+  generateAllVoBtn.disabled = !allVideosComplete;
+  generatePostCopyBtn.disabled = !allVOComplete;
+  
+  // Preview and download require all assets
+  previewBtn.disabled = !allAssetsComplete;
+  downloadBtn.disabled = !allAssetsComplete;
+  generateReportBtn.disabled = !allAssetsComplete;
+  
+  // Update button styles to show sequence
+  generateAllImagesBtn.classList.toggle('next-step', !allImagesComplete);
+  generateAllVideosBtn.classList.toggle('next-step', allImagesComplete && !allVideosComplete);
+  generateAllVoBtn.classList.toggle('next-step', allVideosComplete && !allVOComplete);
+  generatePostCopyBtn.classList.toggle('next-step', allVOComplete && !postCopyComplete);
+  generateReportBtn.classList.toggle('next-step', allAssetsComplete);
   
   // Update overall campaign readiness display
   updateCampaignReadiness();
@@ -587,6 +1356,14 @@ async function handleGeneratePostCopy() {
     state.isGenerating = true;
     generatePostCopyBtn.disabled = true;
     showLoader("✍️ Gemini is writing your social media post...");
+
+    const formData = new FormData(campaignForm);
+    const productDesc = formData.get('product-desc') as string;
+    const targetAudience = formData.get('target-audience') as string;
+    const format = formData.get('format') as string;
+    const platformText = format === '9:16' 
+        ? 'vertical video platforms like TikTok, Instagram Reels, and YouTube Shorts' 
+        : 'feed-based platforms like Instagram and Facebook';
 
     try {
         const formData = new FormData(campaignForm);
@@ -1041,10 +1818,10 @@ function formatCritiqueDisplayEnhanced(critique: CritiqueResult, assetType: 'ima
               ${critique.deploymentReady ? '' : 'title="Asset quality is below deployment threshold (70%)"'}>
         ✓ Accept ${assetType === 'image' ? 'Image' : 'Video'}
       </button>
-      ${canRegenerate ? `
+      ${iterationCount < maxIterations ? `
         <button class="action-btn regenerate-btn" 
                 onclick="handleRegenerateAsset('${assetType}', ${sceneIndex})">
-          🔄 Regenerate with AI Improvements
+          🔄 Regenerate with AI Improvements${critique.deploymentReady ? ' (Optional)' : ''}
         </button>
       ` : ''}
       ${!canRegenerate && !critique.deploymentReady && iterationCount >= maxIterations ? `
@@ -1459,9 +2236,9 @@ async function regenerateVideoWithCritique(sceneIndex: number) {
   const scene = state.storyboard.scenes[sceneIndex];
   const critique = state.critiques.sceneVideos[sceneIndex];
   
-  if (!critique || asset.videoStatus === 'accepted' || asset.imageStatus !== 'complete') {
-    if (asset.imageStatus !== 'complete') {
-      alert('⚠️ Image must be generated first before regenerating video.');
+  if (!critique || asset.videoStatus === 'accepted' || (!asset.imageUrl && !asset.imageB64)) {
+    if (!asset.imageUrl && !asset.imageB64) {
+      alert('⚠️ An image must be available before generating/regenerating video.');
     }
     return;
   }
@@ -1551,9 +2328,10 @@ Apply these improvements focusing on smooth motion, professional transitions, an
         const improvement = ((newScore - oldScore) * 100).toFixed(1);
         console.log(`📊 Score change: ${Math.round(oldScore * 100)}% → ${Math.round(newScore * 100)}% (${improvement > '0' ? '+' : ''}${improvement}%)`);
         
-        // Auto-accept if deployment ready
-        if (newCritique.deploymentReady && newScore > oldScore) {
-          console.log(`✨ Video improved and deployment-ready. Auto-accepting.`);
+        // Only auto-accept if score significantly improved (>5% improvement)
+        const significantImprovement = (newScore - oldScore) > 0.05;
+        if (newCritique.deploymentReady && significantImprovement) {
+          console.log(`✨ Video significantly improved (+${((newScore - oldScore) * 100).toFixed(1)}%) and deployment-ready. Auto-accepting.`);
           (window as any).handleAcceptAsset('video', sceneIndex);
         }
       } catch (critiqueError) {

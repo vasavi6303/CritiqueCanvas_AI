@@ -1,0 +1,259 @@
+.final-report {
+    font-family: system-ui, -apple-system, sans-serif;
+    max-width: 1200px;
+    margin: 20px auto;
+    background: var(--surface-color);
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    overflow: hidden;
+}
+
+.report-header {
+    padding: 24px;
+    color: white;
+    text-align: center;
+}
+
+.report-header h2 {
+    margin: 0 0 16px;
+    font-size: 24px;
+}
+
+.overall-score {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.score-circle {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    font-weight: bold;
+}
+
+.status {
+    font-size: 14px;
+    font-weight: 500;
+    padding: 4px 12px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.2);
+}
+
+.timestamp {
+    font-size: 12px;
+    opacity: 0.9;
+    margin-top: 4px;
+}
+
+.report-content {
+    padding: 24px;
+}
+
+.campaign-overview,
+.content-analysis,
+.scene-analysis,
+.marketing-insights,
+.recommendations {
+    background: var(--background-color);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 24px;
+}
+
+.swot-analysis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.swot-item {
+    background: var(--surface-color);
+    padding: 16px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.swot-item h4 {
+    margin: 0 0 12px;
+    color: var(--text-color);
+}
+
+.scene-report {
+    background: var(--surface-color);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.scene-report h3,
+.scene-report h4 {
+    margin-top: 0;
+    color: var(--text-color);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 8px;
+}
+
+.asset-scores {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.asset-score {
+    background: var(--background-color);
+    padding: 16px;
+    border-radius: 8px;
+}
+
+.asset-score h5,
+.asset-score h4 {
+    margin: 0 0 12px;
+    color: var(--text-color);
+    border: none;
+}
+
+.asset-score .score {
+    font-size: 24px;
+    font-weight: bold;
+    color: var(--primary-color);
+    margin: 8px 0;
+}
+
+.metrics {
+    font-size: 14px;
+    color: var(--text-muted-color);
+    margin: 12px 0;
+}
+
+.metrics div {
+    margin: 4px 0;
+}
+
+.platform-insights {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.platform {
+    background: var(--surface-color);
+    padding: 16px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.platform h5 {
+    margin: 0 0 12px;
+    color: var(--text-color);
+}
+
+.platform .score {
+    font-size: 20px;
+    font-weight: bold;
+    color: var(--primary-color);
+    margin: 8px 0;
+}
+
+.hashtags {
+    font-family: monospace;
+    word-wrap: break-word;
+    color: var(--primary-color);
+    margin: 8px 0;
+}
+
+.action-items {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+.action-items > div {
+    background: var(--surface-color);
+    padding: 16px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.action-items h4 {
+    margin: 0 0 12px;
+    color: var(--text-color);
+    border: none;
+}
+
+ul {
+    margin: 0;
+    padding-left: 20px;
+}
+
+li {
+    margin: 4px 0;
+    color: var(--text-color);
+}
+
+h3 {
+    color: var(--text-color);
+    margin: 0 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--border-color);
+}
+
+h4 {
+    color: var(--text-color);
+    margin: 16px 0 8px;
+}
+
+.strengths {
+    margin-top: 12px;
+    background: var(--background-color);
+    border-radius: 6px;
+    padding: 12px;
+}
+
+.strengths h6 {
+    margin: 0 0 8px;
+    color: var(--text-color);
+}
+
+.strengths ul {
+    color: var(--primary-color);
+}
+
+.strengths ul {
+    margin: 0;
+    padding-left: 20px;
+    color: var(--text-muted-color);
+}
+
+.strengths li {
+    margin-bottom: 4px;
+}
+
+.post-copy-report {
+    background: var(--background-color);
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 24px;
+}
+
+.post-copy-report h3 {
+    margin-top: 0;
+    color: var(--text-color);
+}
+
+.post-copy-report .score {
+    font-size: 1.5em;
+    font-weight: bold;
+    color: var(--primary-color);
+    margin: 12px 0;
+}
