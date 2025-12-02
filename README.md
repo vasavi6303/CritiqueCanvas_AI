@@ -1,8 +1,8 @@
 
-# AutoMACE: AI Marketing Content Engine with AI Critique System
+# CritiqueAI: AI Content Engine with AI Critique System
 
 ## 🚀 Primary Agenda
-AutoMACE is an advanced AI-powered marketing content engine that not only generates high-quality video ads but also **critiques and automatically improves them** using a sophisticated discriminator AI. The platform automates the entire creative process—from campaign ideation to asset generation and quality assurance—using state-of-the-art AI models (Google Gemini 2.5 Flash, Veo 2.0, ElevenLabs). 
+CritiqueAI is an advanced AI-powered marketing content engine that not only generates high-quality video ads but also **critiques and automatically improves them** using a sophisticated discriminator AI. The platform automates the entire creative process—from campaign ideation to asset generation and quality assurance—using state-of-the-art AI models (Google Gemini 2.5 Flash, Veo 2.0, ElevenLabs). 
 
 **Key Innovation:** Built-in AI critique engine that evaluates every generated asset across 5 dimensions (Brand Alignment, Visual Quality, Message Clarity, Safety/Ethics, Platform Optimization) and automatically regenerates content with targeted improvements until deployment-ready.
 
@@ -58,8 +58,8 @@ AutoMACE is an advanced AI-powered marketing content engine that not only genera
 ### Steps
 1. **Clone the repository:**
    ```sh
-   git clone https://github.com/kashyap0729/automace_-ai-marketing-content-engine.git
-   cd automace_-ai-marketing-content-engine
+   git clone https://github.com/vasavi6303/CritiqueCanvas_AI.git
+   cd CritiqueCanvas_AI
    ```
 2. **Install dependencies:**
    ```sh
